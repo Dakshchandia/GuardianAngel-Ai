@@ -71,6 +71,13 @@ class VoiceAnalyzer:
             if self._model_loaded:
                 return
             try:
+                # Check if torch and transformers are available first
+                import importlib
+                if not importlib.util.find_spec("torch") or not importlib.util.find_spec("transformers"):
+                    logger.info("torch/transformers not installed — ML voice analysis unavailable")
+                    self._model_load_error = "torch/transformers not installed"
+                    return
+
                 from transformers import (
                     AutoFeatureExtractor,
                     AutoModelForAudioClassification,

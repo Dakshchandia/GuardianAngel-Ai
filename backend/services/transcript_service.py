@@ -47,10 +47,19 @@ class TranscriptService:
 
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> dict:
         if not audio_bytes or len(audio_bytes) < 500:
-            logger.warning("Audio too short (%d bytes), using mock", len(audio_bytes))
-            return self._mock_transcription(filename, method_note="audio_too_short")
+            logger.warning("Audio too short (%d bytes)", len(audio_bytes))
+            return self._empty_result("audio_too_short")
 
-        # 1. Try local Whisper first (free, offline)
+        # 1. Try OpenAI API first (works on Render)
+        if self.api_key:
+            try:
+                result = await self._transcribe_openai(audio_bytes, filename)
+                if result:
+                    return result
+            except Exception as e:
+                logger.error("OpenAI Whisper failed: %s — trying local", e)
+
+        # 2. Try local Whisper (works locally, not on Render free tier)
         local = self._get_local_whisper()
         if local:
             try:
@@ -58,20 +67,11 @@ class TranscriptService:
                 if result:
                     return result
             except Exception as e:
-                logger.error("Local Whisper failed: %s — trying API", e)
+                logger.error("Local Whisper failed: %s", e)
 
-        # 2. Try OpenAI API (if key has credits)
-        if self.api_key:
-            try:
-                result = await self._transcribe_openai(audio_bytes, filename)
-                if result:
-                    return result
-            except Exception as e:
-                logger.error("OpenAI Whisper failed: %s — using mock", e)
-
-        # 3. Final fallback
-        logger.warning("Using mock transcription (no Whisper available)")
-        return self._mock_transcription(filename)
+        # 3. No transcription available
+        logger.warning("No transcription engine available")
+        return self._empty_result("no_engine")
 
     # ── OpenAI Whisper API ─────────────────────────────────────────────────────
 
@@ -287,26 +287,19 @@ class TranscriptService:
 
     # ── Empty fallback (no Whisper available) ─────────────────────────────────
 
-    def _mock_transcription(self, filename: str = "", method_note: str = "") -> dict:
-        """
-        Returns an empty transcription result when no Whisper engine is available.
-        This is NOT fake data — it honestly reports that transcription could not run.
-        The frontend will show an empty transcript and a 0 risk score, which is correct.
-        """
-        note = f"no_whisper — {method_note}" if method_note else "no_whisper"
-        logger.warning(
-            "Transcription unavailable (%s). "
-            "Install Whisper: pip install openai-whisper  "
-            "or set OPENAI_API_KEY in backend/.env",
-            note,
-        )
+    def _empty_result(self, reason: str = "") -> dict:
+        """Returns empty transcription when no engine is available."""
+        logger.warning("Transcription unavailable (%s). Set OPENAI_API_KEY or install openai-whisper.", reason)
         return {
             "text": "",
             "language": "en",
             "duration": 0,
             "segments": [],
-            "method": f"unavailable — {note}",
+            "method": f"unavailable — {reason}",
         }
+
+    def _mock_transcription(self, filename: str = "", method_note: str = "") -> dict:
+        return self._empty_result(method_note or "no_engine")
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
