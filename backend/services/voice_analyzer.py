@@ -25,8 +25,6 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-
 logger = logging.getLogger("guardianangel.voice_analyzer")
 
 TARGET_SR = 16000          # Wav2Vec2 requires 16 kHz
@@ -179,13 +177,11 @@ class VoiceAnalyzer:
 
     # ── ML inference ──────────────────────────────────────────────────────────
 
-    def _run_ml_inference(self, y: np.ndarray, sr: int) -> dict:
+    def _run_ml_inference(self, y, sr: int) -> dict:
         """
         Run Wav2Vec2 deepfake classifier on the audio waveform.
-
-        The model outputs logits for [REAL, FAKE] (or [LABEL_0, LABEL_1]).
-        We apply softmax to get probabilities.
         """
+        import numpy as np
         import torch
         import torch.nn.functional as F
 
@@ -387,11 +383,12 @@ class VoiceAnalyzer:
 
     # ── Acoustic heuristic fallback ────────────────────────────────────────────
 
-    def _run_acoustic_analysis(self, y: np.ndarray, sr: int) -> dict:
+    def _run_acoustic_analysis(self, y, sr: int) -> dict:
         """
         Fallback: 8-feature acoustic heuristic analysis using librosa.
         Used only when the ML model is unavailable.
         """
+        import numpy as np
         import librosa
 
         features = {}
