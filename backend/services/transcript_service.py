@@ -2,9 +2,10 @@
 Transcription service for GuardianAngel AI.
 
 Priority order:
-1. Local Whisper (openai-whisper package) — FREE, offline
-2. OpenAI Whisper API (if OPENAI_API_KEY has credits)
-3. Keyword-based mock fallback (always works)
+1. Groq Whisper API (FREE — no credit card, fast) — set GROQ_API_KEY
+2. Local Whisper (openai-whisper package) — FREE, offline, heavy
+3. OpenAI Whisper API (if OPENAI_API_KEY set)
+4. Empty result (honest fallback)
 """
 
 import os
@@ -24,8 +25,6 @@ def _ensure_ffmpeg_in_path() -> None:
         current_path = os.environ.get("PATH", "")
         if ffmpeg_dir not in current_path:
             os.environ["PATH"] = ffmpeg_dir + os.pathsep + current_path
-            logger.info("Added ffmpeg to PATH: %s", ffmpeg_dir)
-        # Also set FFMPEG_BINARY so whisper finds it directly
         os.environ["FFMPEG_BINARY"] = ffmpeg_exe
     except Exception as e:
         logger.warning("Could not auto-configure ffmpeg: %s", e)
@@ -35,12 +34,17 @@ _ensure_ffmpeg_in_path()
 
 class TranscriptService:
     def __init__(self):
-        self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self._local_whisper = None
         self._local_whisper_checked = False
 
-        # Try to load local Whisper immediately at startup
-        logger.info("TranscriptService: Loading local Whisper model...")
+        logger.info(
+            "TranscriptService: groq=%s openai=%s",
+            bool(self.groq_api_key),
+            bool(self.openai_api_key),
+        )
+        # Try to load local Whisper at startup (only if installed)
         self._get_local_whisper()
 
     # ── Public interface ───────────────────────────────────────────────────────
@@ -50,16 +54,16 @@ class TranscriptService:
             logger.warning("Audio too short (%d bytes)", len(audio_bytes))
             return self._empty_result("audio_too_short")
 
-        # 1. Try OpenAI API first (works on Render)
-        if self.api_key:
+        # 1. Groq (free, fast, no credit card)
+        if self.groq_api_key:
             try:
-                result = await self._transcribe_openai(audio_bytes, filename)
+                result = await self._transcribe_groq(audio_bytes, filename)
                 if result:
                     return result
             except Exception as e:
-                logger.error("OpenAI Whisper failed: %s — trying local", e)
+                logger.error("Groq Whisper failed: %s", e)
 
-        # 2. Try local Whisper (works locally, not on Render free tier)
+        # 2. Local Whisper (free, offline, heavy — works locally)
         local = self._get_local_whisper()
         if local:
             try:
@@ -69,17 +73,76 @@ class TranscriptService:
             except Exception as e:
                 logger.error("Local Whisper failed: %s", e)
 
-        # 3. No transcription available
+        # 3. OpenAI API (paid)
+        if self.openai_api_key:
+            try:
+                result = await self._transcribe_openai(audio_bytes, filename)
+                if result:
+                    return result
+            except Exception as e:
+                logger.error("OpenAI Whisper failed: %s", e)
+
         logger.warning("No transcription engine available")
         return self._empty_result("no_engine")
+
+    # ── Groq Whisper API (FREE) ────────────────────────────────────────────────
+
+    async def _transcribe_groq(self, audio_bytes: bytes, filename: str) -> dict | None:
+        """
+        Groq offers free Whisper transcription.
+        Get free API key at: https://console.groq.com (no credit card needed)
+        """
+        try:
+            from groq import AsyncGroq
+
+            client = AsyncGroq(api_key=self.groq_api_key)
+            audio_file = io.BytesIO(audio_bytes)
+            audio_file.name = self._normalize_filename(filename)
+
+            response = await client.audio.transcriptions.create(
+                model="whisper-large-v3",
+                file=audio_file,
+                response_format="verbose_json",
+            )
+
+            text = response.text or ""
+            segments = []
+            for seg in (getattr(response, "segments", None) or []):
+                start = getattr(seg, "start", 0)
+                segments.append({
+                    "time": f"{int(start // 60)}:{int(start % 60):02d}",
+                    "text": seg.text.strip(),
+                    "start": start,
+                    "end": getattr(seg, "end", start + 2),
+                })
+
+            if not segments and text:
+                segments = [{"time": "0:00", "text": text.strip(), "start": 0, "end": 5}]
+
+            logger.info("Groq Whisper: %d chars, %d segments", len(text), len(segments))
+            print(f"[GuardianAngel] Groq transcript: {text[:100]!r}")
+
+            return {
+                "text": text,
+                "language": getattr(response, "language", "en"),
+                "duration": getattr(response, "duration", 0),
+                "segments": segments,
+                "method": "groq_whisper",
+            }
+
+        except ImportError:
+            logger.warning("groq package not installed — run: pip install groq")
+            return None
+        except Exception as e:
+            logger.error("Groq transcription error: %s", e)
+            return None
 
     # ── OpenAI Whisper API ─────────────────────────────────────────────────────
 
     async def _transcribe_openai(self, audio_bytes: bytes, filename: str) -> dict | None:
         try:
             import openai
-
-            client = openai.AsyncOpenAI(api_key=self.api_key)
+            client = openai.AsyncOpenAI(api_key=self.openai_api_key)
 
             # Wrap bytes in a file-like object with a name
             audio_file = io.BytesIO(audio_bytes)

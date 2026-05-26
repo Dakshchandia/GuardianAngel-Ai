@@ -7,8 +7,9 @@ python-dotenv==1.0.1
 websockets==12.0
 httpx==0.27.0
 
-# OpenAI (Whisper API for transcription)
+# Transcription — Groq (FREE Whisper API) + OpenAI fallback
 openai==1.30.1
+groq==0.11.0
 
 # Alerts
 twilio==9.1.0
