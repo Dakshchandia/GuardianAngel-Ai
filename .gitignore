@@ -1,0 +1,65 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.env
+*.env
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.npm
+*.tsbuildinfo
+
+# ── Environment files (secrets) ───────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# ── ML model cache (large files — download on first run) ──────────────────────
+*.pt
+*.pth
+*.bin
+*.safetensors
+.cache/
+huggingface/
+~/.cache/huggingface/
+
+# ── Whisper model cache ───────────────────────────────────────────────────────
+*.whisper
+whisper_cache/
+
+# ── Test / temp files ─────────────────────────────────────────────────────────
+test_*.py
+*.tmp
+*.log
+*.wav
+*.mp3
+*.webm
+*.mp4
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+*.override.yml
