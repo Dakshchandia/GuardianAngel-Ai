@@ -116,6 +116,11 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "https://guardianangel.ai",
+        # Vercel deployments
+        "https://guardian-angel-ai.vercel.app",
+        "https://guardianangel-ai.vercel.app",
+        "https://guardian-angel-ai-dakshchandia.vercel.app",
+        "https://guardianangel-ai-dakshchandia.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
