@@ -41,9 +41,14 @@ class TranscriptService:
         self._local_whisper_checked = False
         self._openai_available: bool | None = None
 
-        # Pre-load local Whisper at startup so first request is fast
-        logger.info("TranscriptService: pre-loading local Whisper model...")
-        self._get_local_whisper()
+        # Only pre-load local Whisper if openai-whisper is installed AND
+        # we're not in a memory-constrained environment (Render free = 512MB).
+        # On cloud deployments, OpenAI API handles STT — no local model needed.
+        if os.getenv("LOAD_LOCAL_WHISPER", "false").lower() == "true":
+            logger.info("TranscriptService: pre-loading local Whisper model (LOAD_LOCAL_WHISPER=true)...")
+            self._get_local_whisper()
+        else:
+            logger.info("TranscriptService: local Whisper lazy-load mode (set LOAD_LOCAL_WHISPER=true to pre-load)")
 
     # ── Public ────────────────────────────────────────────────────────────────
 

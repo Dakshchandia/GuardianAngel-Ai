@@ -74,17 +74,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # ── Check local Whisper ───────────────────────────────────────────────────
     try:
-        import whisper  # noqa: F401
-        logger.info("🎙️  Local Whisper: AVAILABLE (tiny model — offline fallback)")
-    except ImportError:
-        logger.warning("🎙️  Local Whisper: not installed")
+        import importlib.util
+        if importlib.util.find_spec("whisper") is not None:
+            logger.info("🎙️  Local Whisper: installed (lazy-loaded on first request)")
+        else:
+            logger.info("🎙️  Local Whisper: not installed — OpenAI API handles STT")
+    except Exception:
+        pass
 
-    # ── Check torch ───────────────────────────────────────────────────────────
+    # ── Check numpy/torch ─────────────────────────────────────────────────────
     try:
-        import torch  # noqa: F401
-        logger.info("🔬 Voice analysis: AVAILABLE (torch acoustic feature extraction)")
-    except ImportError:
-        logger.info("🔬 Voice analysis: numpy-only mode")
+        import importlib.util
+        if importlib.util.find_spec("numpy") is not None:
+            logger.info("🔬 Voice analysis: numpy available")
+        else:
+            logger.info("🔬 Voice analysis: numpy not installed — voice analysis disabled")
+    except Exception:
+        pass
 
     logger.info("📡 API: http://localhost:8000/api")
     logger.info("📊 Status: http://localhost:8000/api/status")
@@ -193,11 +199,11 @@ async def pipeline_status():
         except Exception:
             pass
 
-    # Voice analysis (torch)
+    # Voice analysis (numpy)
     try:
-        import torch  # noqa: F401
-        status["voice_analysis"] = True
-    except ImportError:
+        import importlib.util
+        status["voice_analysis"] = importlib.util.find_spec("numpy") is not None
+    except Exception:
         pass
 
     # Determine active methods
