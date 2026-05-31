@@ -2,18 +2,24 @@
 Transcription service for GuardianAngel AI.
 
 Priority:
-  1. OpenAI Whisper API (whisper-1) — cloud, accurate, fast
-  2. Local Whisper (tiny model) — offline, free, slightly slower
-  NO mock/demo fallback — real audio only.
+  1. Gemini 2.5 Flash (FREE — audio understanding via inline base64)
+  2. Local Whisper (offline, if installed + LOAD_LOCAL_WHISPER=true)
+  3. Raises RuntimeError — no silent mock fallback
 """
 
+import base64
 import io
 import logging
 import os
 import tempfile
 from pathlib import Path
 
+import httpx
+
 logger = logging.getLogger("guardianangel.transcript")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_STT_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 
 # ── Ensure ffmpeg is on PATH (imageio-ffmpeg provides the binary) ─────────────
@@ -40,28 +46,42 @@ class TranscriptService:
         self._local_whisper = None
         self._local_whisper_checked = False
         self._openai_available: bool | None = None
+        self._gemini_available: bool | None = None
 
-        # Only pre-load local Whisper if openai-whisper is installed AND
-        # we're not in a memory-constrained environment (Render free = 512MB).
-        # On cloud deployments, OpenAI API handles STT — no local model needed.
-        if os.getenv("LOAD_LOCAL_WHISPER", "false").lower() == "true":
-            logger.info("TranscriptService: pre-loading local Whisper model (LOAD_LOCAL_WHISPER=true)...")
-            self._get_local_whisper()
+        if GEMINI_API_KEY:
+            logger.info("TranscriptService: Gemini STT ready (free tier)")
+        elif self.openai_key:
+            logger.info("TranscriptService: OpenAI Whisper API ready")
         else:
-            logger.info("TranscriptService: local Whisper lazy-load mode (set LOAD_LOCAL_WHISPER=true to pre-load)")
+            logger.warning("TranscriptService: No API keys — local Whisper only")
+
+        # Only pre-load local Whisper if explicitly enabled
+        if os.getenv("LOAD_LOCAL_WHISPER", "false").lower() == "true":
+            logger.info("TranscriptService: pre-loading local Whisper...")
+            self._get_local_whisper()
 
     # ── Public ────────────────────────────────────────────────────────────────
 
     async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> dict:
         """
         Transcribe audio bytes to text.
-        Returns structured dict with text, segments, language, method.
-        Raises RuntimeError if transcription completely fails.
+        Priority: Gemini (free) → OpenAI Whisper API → Local Whisper
         """
         if not audio_bytes or len(audio_bytes) < 500:
-            raise RuntimeError(f"Audio too short ({len(audio_bytes)} bytes). Please record at least 2 seconds.")
+            raise RuntimeError(
+                f"Audio too short ({len(audio_bytes)} bytes). Please record at least 2 seconds."
+            )
 
-        # 1. OpenAI Whisper API (fast, accurate)
+        # 1. Gemini STT (FREE — no billing needed)
+        if GEMINI_API_KEY and self._gemini_available is not False:
+            try:
+                result = await self._transcribe_gemini(audio_bytes, filename)
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning("Gemini STT failed: %s — trying next", e)
+
+        # 2. OpenAI Whisper API (paid, optional)
         if self.openai_key and self._openai_available is not False:
             try:
                 result = await self._transcribe_openai(audio_bytes, filename)
@@ -70,7 +90,7 @@ class TranscriptService:
             except Exception as e:
                 logger.warning("OpenAI Whisper failed: %s — trying local", e)
 
-        # 2. Local Whisper (offline fallback)
+        # 3. Local Whisper (offline fallback)
         local = self._get_local_whisper()
         if local:
             try:
@@ -81,9 +101,105 @@ class TranscriptService:
                 logger.error("Local Whisper failed: %s", e)
 
         raise RuntimeError(
-            "Transcription failed. Neither OpenAI Whisper API nor local Whisper could process the audio. "
-            "Check your OPENAI_API_KEY or ensure openai-whisper is installed."
+            "Transcription failed. No STT service available. "
+            "Set GEMINI_API_KEY (free at aistudio.google.com) in your environment variables."
         )
+
+    # ── Gemini STT (FREE) ─────────────────────────────────────────────────────
+
+    async def _transcribe_gemini(self, audio_bytes: bytes, filename: str) -> dict | None:
+        """
+        Use Gemini 2.5 Flash to transcribe audio via inline base64.
+        Completely free with the Gemini API key.
+        """
+        try:
+            # Determine MIME type
+            ext = Path(self._normalize_filename(filename)).suffix.lower()
+            mime_map = {
+                ".mp3": "audio/mp3",
+                ".wav": "audio/wav",
+                ".m4a": "audio/mp4",
+                ".ogg": "audio/ogg",
+                ".flac": "audio/flac",
+                ".webm": "audio/webm",
+                ".mp4": "audio/mp4",
+            }
+            mime_type = mime_map.get(ext, "audio/webm")
+
+            # Encode audio as base64
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+            prompt = (
+                "Transcribe this audio recording accurately. "
+                "Return ONLY the spoken text, nothing else. "
+                "If multiple speakers, include all speech. "
+                "Preserve the exact words spoken including Hindi/Hinglish if present."
+            )
+
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": audio_b64,
+                            }
+                        },
+                        {"text": prompt},
+                    ]
+                }],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "maxOutputTokens": 2048,
+                },
+            }
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                r = await client.post(
+                    f"{GEMINI_STT_URL}?key={GEMINI_API_KEY}",
+                    json=payload,
+                )
+
+            if r.status_code != 200:
+                logger.warning("Gemini STT HTTP %d: %s", r.status_code, r.text[:200])
+                if r.status_code in (400, 403):
+                    self._gemini_available = False
+                return None
+
+            data = r.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                logger.warning("Gemini STT: empty candidates")
+                return None
+
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+
+            if not text:
+                logger.warning("Gemini STT: empty transcript")
+                return None
+
+            self._gemini_available = True
+            logger.info("Gemini STT: %d chars transcribed", len(text))
+
+            # Build single segment (Gemini doesn't return timestamps)
+            segments = [{"time": "0:00", "text": text, "start": 0.0, "end": 10.0}]
+
+            return {
+                "text": text,
+                "language": "en",
+                "duration": 10.0,
+                "segments": segments,
+                "method": "gemini_stt",
+            }
+
+        except httpx.ConnectError:
+            logger.warning("Gemini STT: connection error")
+            self._gemini_available = False
+            return None
+        except Exception as e:
+            logger.warning("Gemini STT error: %s", e)
+            return None
 
     # ── OpenAI Whisper API ────────────────────────────────────────────────────
 
@@ -119,8 +235,7 @@ class TranscriptService:
                 segments = [{"time": "0:00", "text": text.strip(), "start": 0.0, "end": 5.0}]
 
             self._openai_available = True
-            logger.info("OpenAI Whisper: %d chars, %d segments, lang=%s",
-                        len(text), len(segments), getattr(response, "language", "?"))
+            logger.info("OpenAI Whisper: %d chars, %d segments", len(text), len(segments))
 
             return {
                 "text": text,
@@ -131,18 +246,13 @@ class TranscriptService:
             }
 
         except ImportError:
-            logger.warning("openai package not installed")
             return None
         except Exception as e:
             err_str = str(e).lower()
             if "429" in err_str or "quota" in err_str or "insufficient" in err_str:
-                logger.warning("OpenAI quota exceeded — switching to local Whisper")
                 self._openai_available = False
             elif "401" in err_str or "invalid" in err_str:
-                logger.warning("OpenAI key invalid — switching to local Whisper")
                 self._openai_available = False
-            else:
-                logger.warning("OpenAI Whisper error: %s", e)
             return None
 
     # ── Local Whisper ─────────────────────────────────────────────────────────
@@ -174,9 +284,8 @@ class TranscriptService:
             _wa.load_audio = _patched_load_audio
             logger.info("Loading local Whisper 'tiny' model...")
             self._local_whisper = whisper.load_model("tiny")
-            logger.info("Local Whisper 'tiny' loaded successfully")
+            logger.info("Local Whisper 'tiny' loaded")
         except ImportError:
-            logger.info("openai-whisper not installed")
             self._local_whisper = None
         except Exception as e:
             logger.warning("Could not load local Whisper: %s", e)
@@ -203,7 +312,6 @@ class TranscriptService:
                 })
             if not segments and text:
                 segments = [{"time": "0:00", "text": text, "start": 0.0, "end": 5.0}]
-
             logger.info("Local Whisper: %d chars, %d segments", len(text), len(segments))
             return {
                 "text": text,
@@ -217,8 +325,6 @@ class TranscriptService:
                 os.unlink(tmp_path)
             except Exception:
                 pass
-
-    # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
     def _normalize_filename(filename: str) -> str:
