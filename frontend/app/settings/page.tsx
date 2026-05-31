@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Navbar from "@/components/Navbar";
@@ -289,8 +289,6 @@ export default function SettingsPage() {
                 <span className="text-white">Team Pillars</span>
               </div>
               <div className="flex justify-between">
-                <span>Members</span>
-                <span className="text-white">Daksh Chandia & Aarushi Singh</span>
               </div>
               <div className="flex justify-between">
                 <span>Institution</span>
