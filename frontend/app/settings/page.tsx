@@ -289,8 +289,6 @@ export default function SettingsPage() {
                 <span className="text-white">Team Pillars</span>
               </div>
               <div className="flex justify-between">
-              </div>
-              <div className="flex justify-between">
                 <span>Institution</span>
                 <span className="text-white">IIIT Kottayam</span>
               </div>
