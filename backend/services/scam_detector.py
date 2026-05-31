@@ -1,6 +1,6 @@
 """
 Core scam detection logic for GuardianAngel AI.
-Upgraded: stronger keyword coverage + rule-based boosters + stricter scoring.
+Real keyword-based detection with dynamic risk scoring.
 """
 
 import re
@@ -10,43 +10,21 @@ from typing import Optional
 logger = logging.getLogger("guardianangel.scam_detector")
 
 # ─── Keyword database ─────────────────────────────────────────────────────────
-# Weights are now higher and categories are broader
+# Each category has a weight multiplier for risk scoring
 
 SCAM_KEYWORDS: dict[str, dict] = {
     "otp_fraud": {
-        "weight": 40,
+        "weight": 20,
         "keywords": [
             "otp", "one time password", "one-time password",
             "verification code", "verify code", "enter the code",
             "share the otp", "tell me the otp", "otp share karo",
             "otp batao", "code batao", "pin batao", "pin number",
-            "cvv", "card number", "expiry date", "card details",
-            "security code", "authentication code", "2fa code",
-            "two factor", "passcode", "access code",
-        ],
-    },
-    "money_request": {
-        "weight": 35,
-        "keywords": [
-            # Direct money requests — the main gap that was missing
-            "need money", "need cash", "need funds",
-            "give me money", "give me cash", "give me the money",
-            "send me money", "send me cash", "send me the money",
-            "i need", "need from you", "need it from you",
-            "lend me", "borrow money", "loan me",
-            "money from you", "cash from you", "funds from you",
-            "80000", "80,000", "50000", "50,000", "1 lakh", "2 lakh",
-            "need rupees", "need rs", "need ₹",
-            "give rupees", "give rs", "give ₹",
-            "pay me", "pay for me", "pay now",
-            "wire transfer", "wire me", "wire the money",
-            "send the amount", "transfer the amount",
-            "financial help", "financial assistance",
-            "help me financially", "money help",
+            "cvv", "card number", "expiry date",
         ],
     },
     "financial": {
-        "weight": 25,
+        "weight": 15,
         "keywords": [
             "send money", "transfer money", "send cash",
             "bank account", "account number", "ifsc",
@@ -57,17 +35,10 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "paise bhejo", "paisa transfer", "account mein dalo",
             "google pay", "amazon pay", "bhim upi",
             "wallet", "recharge", "cashback",
-            "credit card", "debit card", "net banking",
-            "bank details", "account details", "account blocked",
-            "account suspended", "account frozen",
-            "refund", "claim refund", "get refund",
-            "investment", "invest now", "double your money",
-            "crypto", "bitcoin", "trading profit",
-            "remote access", "anydesk", "teamviewer",
         ],
     },
     "urgency": {
-        "weight": 20,
+        "weight": 15,
         "keywords": [
             "urgent", "urgently", "immediately", "right now",
             "hurry", "hurry up", "no time", "time is running out",
@@ -76,13 +47,10 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "abhi karo", "der mat karo", "time nahi hai",
             "kal tak", "aaj hi", "within 24 hours",
             "act now", "do it now", "don't delay",
-            "as soon as possible", "asap", "right away",
-            "before it's too late", "limited time",
-            "today only", "expires today", "last day",
         ],
     },
     "isolation": {
-        "weight": 25,
+        "weight": 20,
         "keywords": [
             "don't tell", "dont tell", "do not tell",
             "keep secret", "keep this secret", "don't inform",
@@ -91,11 +59,10 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "mat batao", "secret rakho", "kisi ko mat batana",
             "ghar mein mat batana", "kisi se mat bolna",
             "confidential", "private matter", "just between us",
-            "don't share", "keep it private", "tell no one",
         ],
     },
     "authority_threat": {
-        "weight": 25,
+        "weight": 15,
         "keywords": [
             "police", "arrested", "arrest", "court",
             "legal action", "warrant", "cbi", "income tax",
@@ -105,12 +72,10 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "rbi", "sebi", "enforcement directorate", "ed officer",
             "narcotics", "drug case", "money laundering",
             "your account will be blocked", "account band ho jayega",
-            "government notice", "tax notice", "legal notice",
-            "you will be arrested", "case against you",
         ],
     },
     "impersonation": {
-        "weight": 20,
+        "weight": 10,
         "keywords": [
             "i am your son", "i am your daughter", "it's me",
             "don't you recognize", "it is me", "this is your",
@@ -120,14 +85,10 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "main bol raha hoon", "pehchana nahi",
             "beta bol raha hoon", "beti bol rahi hoon",
             "dadu", "nana", "nani", "dadi",
-            "your relative", "family member", "your friend",
-            "calling from bank", "bank officer", "bank manager",
-            "calling from rbi", "rbi officer", "government official",
-            "calling from police", "police officer",
         ],
     },
     "emotional_manipulation": {
-        "weight": 25,
+        "weight": 20,
         "keywords": [
             "please don't tell anyone", "i'm in trouble",
             "i'm scared", "they will hurt me", "please trust me",
@@ -136,32 +97,16 @@ SCAM_KEYWORDS: dict[str, dict] = {
             "mujhe bachao", "meri madad karo", "please help me",
             "agar tum mujhse pyaar karte ho", "tumhara beta hoon",
             "bahut takleef mein hoon", "please please",
-            "my life is in danger", "they will kill me",
-            "i am dying", "critical condition", "life or death",
-            "mother in hospital", "father in hospital",
-            "family emergency", "child in danger",
         ],
     },
     "prize_lottery": {
-        "weight": 20,
+        "weight": 15,
         "keywords": [
             "you have won", "congratulations you won", "lottery winner",
             "prize money", "lucky draw", "selected winner",
             "claim your prize", "free gift", "reward",
             "aapne jeeta", "lucky winner", "bumper prize",
             "kbc", "kaun banega crorepati", "lucky number",
-            "you are selected", "special offer", "exclusive offer",
-            "click the link", "click here to claim",
-        ],
-    },
-    "password_security": {
-        "weight": 35,
-        "keywords": [
-            "password", "your password", "share password",
-            "tell me your password", "what is your password",
-            "login details", "username and password",
-            "account password", "email password",
-            "reset password", "change password for me",
         ],
     },
 }
@@ -173,123 +118,38 @@ ALL_KEYWORDS = [
     for kw in cat["keywords"]
 ]
 
-# ─── High-confidence regex patterns ───────────────────────────────────────────
-# These fire even when exact keyword phrases don't match
-
-MONEY_AMOUNT_PATTERN = re.compile(
-    r"\b(\d{4,7}|[\d,]{5,10})\s*(rupees?|rs\.?|₹|inr|dollars?|\$|usd)?\b",
-    re.IGNORECASE,
-)
-
-NEED_MONEY_PATTERN = re.compile(
-    r"\b(need|want|require|give|send|transfer|lend|borrow|pay)\b.{0,30}\b"
-    r"(money|cash|funds?|rupees?|rs\.?|₹|amount|payment|loan)\b",
-    re.IGNORECASE | re.DOTALL,
-)
-
+# Compiled urgency patterns for fast regex matching
 URGENCY_PATTERNS = [
-    re.compile(r"\b(urgent|immediately|right now|hurry|emergency|asap)\b", re.IGNORECASE),
-    re.compile(r"\b(don.?t tell|keep secret|don.?t call|tell no one)\b", re.IGNORECASE),
-    re.compile(r"\b(send money|transfer|paytm|upi|gpay|phonepe)\b", re.IGNORECASE),
-    re.compile(r"\b(otp|one.?time.?password|verification code|passcode)\b", re.IGNORECASE),
-    re.compile(r"\b(arrested|police|court|warrant|cbi|legal action)\b", re.IGNORECASE),
-    re.compile(r"\b(accident|hospital|injured|help me|in trouble|in danger)\b", re.IGNORECASE),
-    re.compile(r"\b(password|pin|cvv|card number|account number)\b", re.IGNORECASE),
-    re.compile(r"\b(need|give|send|lend).{0,20}(money|cash|funds|rupees|₹)\b", re.IGNORECASE),
+    re.compile(r"\b(urgent|immediately|right now|hurry|emergency)\b", re.IGNORECASE),
+    re.compile(r"\b(don.?t tell|keep secret|don.?t call)\b", re.IGNORECASE),
+    re.compile(r"\b(send money|transfer|paytm|upi|gpay)\b", re.IGNORECASE),
+    re.compile(r"\b(otp|one.?time.?password|verification code)\b", re.IGNORECASE),
+    re.compile(r"\b(arrested|police|court|warrant|cbi)\b", re.IGNORECASE),
+    re.compile(r"\b(accident|hospital|injured|help me|in trouble)\b", re.IGNORECASE),
 ]
 
 
 class ScamDetector:
     """
-    Upgraded scam detection engine.
+    Real keyword-based scam detection engine.
 
     Risk score formula:
-    - Keyword score: sum of category weights (capped at 75)
-    - Pattern boost: regex pattern matches add up to 25 pts
-    - Voice anomaly: up to 10 pts
-    - Rule-based boosters: direct money/OTP/password requests add flat bonuses
+    - Each keyword hit adds its category weight (capped at 70 pts total from keywords)
+    - Urgency pattern matches add up to 20 pts
+    - Voice anomaly score adds up to 10 pts
     Total: 0–100
     """
 
     def __init__(self):
         logger.info("ScamDetector initialized with %d keyword categories", len(SCAM_KEYWORDS))
 
-    # ── Rule-based boosters ────────────────────────────────────────────────────
-
-    def rule_based_boost(self, text: str) -> tuple[int, list[str]]:
-        """
-        Apply hard rule-based scoring on top of keyword matching.
-        Returns (boost_points, list_of_triggered_rules).
-        These fire on natural speech patterns that keyword lists miss.
-        """
-        text_lower = text.lower()
-        boost = 0
-        triggered = []
-
-        # Money amount + request pattern (catches "I need 80,000 from you")
-        if NEED_MONEY_PATTERN.search(text):
-            boost += 35
-            triggered.append("Direct money request detected")
-
-        # Standalone large number (likely a money amount in context)
-        if MONEY_AMOUNT_PATTERN.search(text):
-            boost += 15
-            triggered.append("Large monetary amount mentioned")
-
-        # Individual high-risk word boosters
-        if re.search(r"\b(otp|passcode|pin)\b", text_lower):
-            boost += 40
-            triggered.append("OTP/PIN request")
-
-        if re.search(r"\bpassword\b", text_lower):
-            boost += 35
-            triggered.append("Password request")
-
-        if re.search(r"\b(bank account|account number|ifsc)\b", text_lower):
-            boost += 25
-            triggered.append("Bank account details requested")
-
-        if re.search(r"\b(upi|gpay|phonepe|paytm|google pay)\b", text_lower):
-            boost += 25
-            triggered.append("UPI/payment app mentioned")
-
-        if re.search(r"\b(urgent|immediately|right now|asap|emergency)\b", text_lower):
-            boost += 15
-            triggered.append("Urgency pressure detected")
-
-        if re.search(r"\b(don.?t tell|keep secret|tell no one|between us)\b", text_lower):
-            boost += 20
-            triggered.append("Isolation/secrecy tactic")
-
-        if re.search(r"\b(arrested|police|court|warrant|legal action|jail)\b", text_lower):
-            boost += 25
-            triggered.append("False authority/legal threat")
-
-        if re.search(r"\b(hospital|accident|injured|dying|critical)\b", text_lower):
-            boost += 20
-            triggered.append("Family emergency manipulation")
-
-        if re.search(r"\b(refund|cashback|prize|lottery|won|selected winner)\b", text_lower):
-            boost += 20
-            triggered.append("Prize/refund scam language")
-
-        if re.search(r"\b(crypto|bitcoin|investment|double your money|trading)\b", text_lower):
-            boost += 25
-            triggered.append("Investment/crypto scam language")
-
-        if re.search(r"\b(remote access|anydesk|teamviewer|screen share)\b", text_lower):
-            boost += 35
-            triggered.append("Remote access request — high risk")
-
-        if re.search(r"\b(kyc|kyc update|kyc verification|kyc expired)\b", text_lower):
-            boost += 30
-            triggered.append("KYC fraud attempt")
-
-        return boost, triggered
-
     # ── Keyword detection ──────────────────────────────────────────────────────
 
     def detect_keywords(self, text: str) -> dict[str, list[str]]:
+        """
+        Find scam keywords in text, grouped by category.
+        Returns { category_name: [matched_keywords] }
+        """
         text_lower = text.lower()
         found: dict[str, list[str]] = {}
         for category, config in SCAM_KEYWORDS.items():
@@ -299,6 +159,10 @@ class ScamDetector:
         return found
 
     def detect_urgency_score(self, text: str) -> float:
+        """
+        Regex-based urgency/manipulation pattern score.
+        Returns 0.0–1.0.
+        """
         matches = sum(1 for p in URGENCY_PATTERNS if p.search(text))
         return min(matches / len(URGENCY_PATTERNS), 1.0)
 
@@ -310,38 +174,36 @@ class ScamDetector:
         voice_anomaly_score: float = 0.0,
         keyword_categories: Optional[dict] = None,
     ) -> int:
+        """
+        Dynamic risk score (0–100).
+
+        Breakdown:
+        - Keyword score: sum of category weights for matched categories, capped at 70
+        - Urgency score: urgency_pattern_ratio * 20
+        - Voice score: voice_anomaly_score * 10
+        """
         if keyword_categories is None:
             keyword_categories = self.detect_keywords(transcript)
 
-        # Keyword score
+        # Keyword score: each matched category contributes its weight
         keyword_score = 0
         for category, hits in keyword_categories.items():
             if hits:
                 weight = SCAM_KEYWORDS.get(category, {}).get("weight", 10)
                 keyword_score += weight
-        keyword_score = min(keyword_score, 75)
+        keyword_score = min(keyword_score, 70)
 
-        # Pattern/urgency score
-        urgency_score = self.detect_urgency_score(transcript) * 25
-
-        # Rule-based boost
-        rule_boost, _ = self.rule_based_boost(transcript)
-        rule_boost = min(rule_boost, 60)  # cap rule boost
-
-        # Voice anomaly
+        urgency_score = self.detect_urgency_score(transcript) * 20
         voice_score = voice_anomaly_score * 10
 
-        total = keyword_score + urgency_score + rule_boost + voice_score
+        total = keyword_score + urgency_score + voice_score
         return min(int(total), 100)
 
     def get_verdict(self, risk_score: int) -> str:
-        """Stricter verdict thresholds — less lenient on suspicious content."""
-        if risk_score <= 20:
+        if risk_score <= 30:
             return "SAFE"
-        elif risk_score <= 50:
+        elif risk_score <= 60:
             return "SUSPICIOUS"
-        elif risk_score <= 75:
-            return "HIGH RISK"
         return "SCAM"
 
     # ── Full analysis ──────────────────────────────────────────────────────────
@@ -349,44 +211,20 @@ class ScamDetector:
     def analyze_transcript(
         self, transcript: str, voice_anomaly_score: float = 0.0
     ) -> dict:
+        """
+        Full analysis pipeline.
+        Returns structured result dict.
+        """
         keyword_categories = self.detect_keywords(transcript)
-        rule_boost, rule_triggers = self.rule_based_boost(transcript)
         risk_score = self.calculate_risk_score(
             transcript, voice_anomaly_score, keyword_categories
         )
         verdict = self.get_verdict(risk_score)
 
+        # Build threat list from detected categories
         threats = []
         threat_id = 1
 
-        # Rule-based threats (these fire even without exact keyword matches)
-        for trigger in rule_triggers:
-            severity = "HIGH"
-            threat_type = "FINANCIAL"
-            if "OTP" in trigger or "PIN" in trigger:
-                threat_type = "OTP_SCAM"
-            elif "password" in trigger.lower():
-                threat_type = "OTP_SCAM"
-            elif "authority" in trigger.lower() or "legal" in trigger.lower():
-                threat_type = "AUTHORITY"
-            elif "isolation" in trigger.lower() or "secrecy" in trigger.lower():
-                threat_type = "ISOLATION"
-            elif "emergency" in trigger.lower() or "hospital" in trigger.lower():
-                threat_type = "IMPERSONATION"
-                severity = "HIGH"
-            elif "remote" in trigger.lower():
-                threat_type = "AUTHORITY"
-            threats.append({
-                "id": f"r{threat_id}",
-                "time": "—",
-                "type": threat_type,
-                "label": trigger,
-                "confidence": min(70 + rule_boost // 3, 98),
-                "severity": severity,
-            })
-            threat_id += 1
-
-        # Keyword-based threats
         if voice_anomaly_score > 0.5:
             threats.append({
                 "id": f"t{threat_id}",
@@ -398,24 +236,13 @@ class ScamDetector:
             })
             threat_id += 1
 
-        if "otp_fraud" in keyword_categories or "password_security" in keyword_categories:
+        if "otp_fraud" in keyword_categories:
             threats.append({
                 "id": f"t{threat_id}",
                 "time": "—",
                 "type": "OTP_SCAM",
-                "label": "OTP / password extraction attempt",
+                "label": "OTP extraction attempt detected",
                 "confidence": 98,
-                "severity": "HIGH",
-            })
-            threat_id += 1
-
-        if "money_request" in keyword_categories:
-            threats.append({
-                "id": f"t{threat_id}",
-                "time": "—",
-                "type": "FINANCIAL",
-                "label": f"Direct money request: {', '.join(keyword_categories['money_request'][:2])}",
-                "confidence": 95,
                 "severity": "HIGH",
             })
             threat_id += 1
@@ -449,7 +276,7 @@ class ScamDetector:
                 "id": f"t{threat_id}",
                 "time": "—",
                 "type": "FINANCIAL",
-                "label": f"Financial fraud indicators ({', '.join(kws[:2])})",
+                "label": f"Fraudulent financial request ({', '.join(kws[:2])})",
                 "confidence": min(len(kws) * 18, 95),
                 "severity": "HIGH",
             })
@@ -499,35 +326,25 @@ class ScamDetector:
             })
             threat_id += 1
 
-        # Deduplicate threats by label
-        seen_labels = set()
-        unique_threats = []
-        for t in threats:
-            if t["label"] not in seen_labels:
-                seen_labels.add(t["label"])
-                unique_threats.append(t)
-        threats = unique_threats
-
-        # Collect manipulation phrases
+        # Collect all matched keywords for the response
         all_matched = []
         for hits in keyword_categories.values():
-            all_matched.extend(hits[:2])
-        all_matched.extend(rule_triggers[:3])
-        manipulation_phrases = list(dict.fromkeys(all_matched))[:8]
+            all_matched.extend(hits[:2])  # top 2 per category
+        manipulation_phrases = list(dict.fromkeys(all_matched))[:8]  # deduplicate
 
         # Evidence summary
-        if verdict in ("SCAM", "HIGH RISK"):
+        if verdict == "SCAM":
             evidence_summary = (
-                f"{verdict} DETECTED — {len(threats)} threat indicator(s) found. "
+                f"SCAM DETECTED — {len(threats)} threat indicator(s) found. "
                 f"Risk score: {risk_score}/100. "
-                f"Triggers: {', '.join((list(keyword_categories.keys()) + rule_triggers)[:4])}. "
+                f"Matched categories: {', '.join(keyword_categories.keys())}. "
                 "Recommend immediate call termination and family alert."
             )
         elif verdict == "SUSPICIOUS":
             evidence_summary = (
                 f"Suspicious patterns detected — {len(threats)} indicator(s). "
                 f"Risk score: {risk_score}/100. "
-                "Verify caller identity before sharing any information."
+                "Verify caller identity using SafePhrase before sharing any information."
             )
         else:
             evidence_summary = (
@@ -536,9 +353,8 @@ class ScamDetector:
             )
 
         logger.info(
-            "Analysis: verdict=%s score=%d threats=%d rule_boost=%d keywords=%s",
-            verdict, risk_score, len(threats), rule_boost,
-            list(keyword_categories.keys()),
+            "Analysis: verdict=%s score=%d threats=%d keywords=%s",
+            verdict, risk_score, len(threats), list(keyword_categories.keys()),
         )
 
         return {
@@ -554,6 +370,7 @@ class ScamDetector:
     # ── Keyword highlighting ───────────────────────────────────────────────────
 
     def highlight_keywords(self, text: str) -> dict:
+        """Return keyword positions for frontend highlighting."""
         text_lower = text.lower()
         highlights = []
         for kw in ALL_KEYWORDS:

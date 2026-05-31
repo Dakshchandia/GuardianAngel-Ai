@@ -8,7 +8,6 @@ interface TranscriptPanelProps {
   entries: TranscriptEntry[];
   isLive?: boolean;
   maxHeight?: string;
-  analysisComplete?: boolean;
 }
 
 function highlightKeywords(text: string): React.ReactNode[] {
@@ -68,7 +67,6 @@ export default function TranscriptPanel({
   entries,
   isLive = false,
   maxHeight = "320px",
-  analysisComplete = false,
 }: TranscriptPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -104,29 +102,16 @@ export default function TranscriptPanel({
       >
         {entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-text-muted space-y-3">
-            {analysisComplete ? (
-              <>
-                <AlertCircle className="w-8 h-8 text-warning opacity-60" />
-                <p className="text-xs text-center leading-relaxed px-4">
-                  No speech detected.<br />
-                  Whisper may not be installed on the backend.<br />
-                  <code className="text-primary text-xs">pip install openai-whisper</code>
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="flex gap-1">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="waveform-bar opacity-30"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                </div>
-                <p className="text-xs">Waiting for speech...</p>
-              </>
-            )}
+            <div className="flex gap-1">
+              {[...Array(5)].map((_, i) => (
+                <div
+                  key={i}
+                  className="waveform-bar opacity-30"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
+            </div>
+            <p className="text-xs">Waiting for speech...</p>
           </div>
         ) : (
           entries.map((entry, i) => (

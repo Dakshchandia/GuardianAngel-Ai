@@ -106,21 +106,12 @@ export default function DashboardPage() {
       setAnalysisTimestamp(new Date().toLocaleTimeString("en-IN"));
       setPhase("complete");
 
-      // Warn if transcript is empty — Whisper likely not installed
-      if (result.transcript.length === 0 || result.transcript.every(e => !e.text.trim())) {
-        toast("⚠️ Transcript is empty — Whisper may not be installed on the backend.\nRun: pip install openai-whisper", {
-          icon: "🎙️",
-          duration: 8000,
-        });
-        return;
-      }
-
-      if (result.risk_score > 50) {
+      if (result.risk_score > 60) {
         setTimeout(() => setShowAlert(true), 800);
         toast.error(`⚠️ ${result.verdict} detected — Risk score: ${result.risk_score}/100`, {
           duration: 5000,
         });
-      } else if (result.risk_score > 20) {
+      } else if (result.risk_score > 30) {
         toast("⚠️ Suspicious patterns detected", {
           icon: "🟡",
           duration: 4000,
@@ -208,8 +199,6 @@ export default function DashboardPage() {
   const verdictColor =
     verdict === "SCAM"
       ? "text-danger"
-      : verdict === "HIGH RISK"
-      ? "text-danger"
       : verdict === "SUSPICIOUS"
       ? "text-warning"
       : verdict === "SAFE"
@@ -218,8 +207,6 @@ export default function DashboardPage() {
 
   const verdictBg =
     verdict === "SCAM"
-      ? "bg-danger/10 border-danger/20"
-      : verdict === "HIGH RISK"
       ? "bg-danger/10 border-danger/20"
       : verdict === "SUSPICIOUS"
       ? "bg-warning/10 border-warning/20"
@@ -441,7 +428,6 @@ export default function DashboardPage() {
               entries={transcript}
               isLive={phase === "recording" || phase === "analyzing"}
               maxHeight="300px"
-              analysisComplete={phase === "complete"}
             />
 
             {/* Elder mode */}

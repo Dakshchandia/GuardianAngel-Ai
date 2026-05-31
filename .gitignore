@@ -1,56 +1,41 @@
-# ── Python ────────────────────────────────────────────────────────────────────
+# ── Python / Backend ──────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.so
+.Python
 *.egg
 *.egg-info/
 dist/
 build/
-.eggs/
+*.so
 .venv/
 venv/
 env/
+ENV/
 .env
-*.env
+.env.*
+!.env.example
 
-# ── Node / Next.js ────────────────────────────────────────────────────────────
+# Whisper model cache
+*.pt
+*.bin
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
 node_modules/
 .next/
 out/
-.npm
+.vercel/
 *.tsbuildinfo
-
-# ── Environment files (secrets) ───────────────────────────────────────────────
-.env
 .env.local
-.env.*.local
-backend/.env
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# ── ML model cache (large files — download on first run) ──────────────────────
-*.pt
-*.pth
-*.bin
-*.safetensors
-.cache/
-huggingface/
-~/.cache/huggingface/
-
-# ── Whisper model cache ───────────────────────────────────────────────────────
-*.whisper
-whisper_cache/
-
-# ── Test / temp files ─────────────────────────────────────────────────────────
-test_*.py
-*.tmp
-*.log
-*.wav
-*.mp3
-*.webm
-*.mp4
-
-# ── OS files ──────────────────────────────────────────────────────────────────
+# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -61,5 +46,7 @@ desktop.ini
 *.swp
 *.swo
 
-# ── Docker ────────────────────────────────────────────────────────────────────
-*.override.yml
+# ── Temp / test files ─────────────────────────────────────────────────────────
+*.tmp
+*.log
+test_*.py

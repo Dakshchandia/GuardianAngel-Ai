@@ -1,6 +1,5 @@
 import {
   AudioAnalysisResponse,
-  VoiceAnalysisResponse,
   AlertResponse,
   FamilyContact,
   ReportEntry,
@@ -8,8 +7,8 @@ import {
 
 const API_BASE =
   typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000")
-    : "http://127.0.0.1:8000";
+    ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+    : "http://localhost:8000";
 
 // ─── Real audio analysis ──────────────────────────────────────────────────────
 
@@ -50,9 +49,7 @@ export async function analyzeAudio(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const data = JSON.parse(xhr.responseText);
-          console.log("REAL BACKEND RESPONSE:", data);
-          resolve(data);
+          resolve(JSON.parse(xhr.responseText));
         } catch {
           reject(new Error("Invalid JSON response from server"));
         }
@@ -132,20 +129,12 @@ export async function sendFamilyAlert(
 // ─── Health check ─────────────────────────────────────────────────────────────
 
 export async function checkBackendHealth(): Promise<boolean> {
-  // Try both 127.0.0.1 and localhost to handle IPv4/IPv6 differences on Windows
-  const urls = [
-    "http://127.0.0.1:8000/health",
-    "http://localhost:8000/health",
-  ];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (res.ok) return true;
-    } catch {
-      // try next
-    }
+  try {
+    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(8000) });
+    return res.ok;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 // ─── Demo mode mock (only used when demoMode=true) ───────────────────────────

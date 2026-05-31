@@ -6,21 +6,20 @@ from typing import Optional
 
 logger = logging.getLogger("guardianangel.audio_utils")
 
-SUPPORTED_FORMATS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm", ".mp4", ".mov", ".avi", ".mkv"}
+SUPPORTED_FORMATS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm"}
 MAX_FILE_SIZE_MB = 50
 
 
 def validate_audio_file(filename: str, file_size: int) -> tuple[bool, str]:
-    """Validate audio or video file format and size.
-    Video formats (mp4, mov, avi, mkv) are accepted — ffmpeg extracts audio from them."""
+    """Validate audio file format and size."""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-
+    
     if ext not in SUPPORTED_FORMATS:
-        return False, f"Unsupported format '{ext}'. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}"
-
+        return False, f"Unsupported format '{ext}'. Supported: {', '.join(SUPPORTED_FORMATS)}"
+    
     if file_size > MAX_FILE_SIZE_MB * 1024 * 1024:
         return False, f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB"
-
+    
     return True, "OK"
 
 

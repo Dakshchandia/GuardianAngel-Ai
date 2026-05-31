@@ -15,6 +15,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,30 +33,67 @@ logger = logging.getLogger("guardianangel")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    """Application lifespan handler."""
+    """Application lifespan handler — checks all AI pipeline components."""
     logger.info("🛡️  GuardianAngel AI Backend starting...")
-    logger.info("📡 WebSocket endpoint: ws://localhost:8000/ws/live-analysis")
-    logger.info("🔌 REST API: http://localhost:8000/api")
 
-    # Check Ollama availability
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get("http://localhost:11434/api/tags")
+    # ── Check Gemini ──────────────────────────────────────────────────────────
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        try:
+            # Use models list endpoint for a lightweight key validity check
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}",
+                )
             if r.status_code == 200:
-                logger.info("🤖 Ollama LLM: AVAILABLE — LLM analysis enabled")
+                logger.info("🤖 Gemini: AVAILABLE (gemini-2.5-flash)")
             else:
-                logger.info("🤖 Ollama LLM: not running — keyword-only mode")
-    except Exception:
-        logger.info("🤖 Ollama LLM: not running — keyword-only mode (install from ollama.com)")
+                logger.warning("🤖 Gemini: key error %d — check GEMINI_API_KEY", r.status_code)
+        except Exception:
+            logger.warning("🤖 Gemini: unreachable at startup (will retry on first request)")
+    else:
+        logger.info("🤖 Gemini: no key — using GPT-3.5 fallback (set GEMINI_API_KEY for best results)")
 
-    # Check Whisper availability
+    # ── Check OpenAI ──────────────────────────────────────────────────────────
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                )
+            if r.status_code == 200:
+                logger.info("🎙️  OpenAI Whisper API: AVAILABLE (whisper-1 + gpt-3.5-turbo)")
+            else:
+                logger.warning("🎙️  OpenAI: key error %d", r.status_code)
+        except Exception:
+            logger.warning("🎙️  OpenAI: unreachable at startup (will retry on first request)")
+    else:
+        logger.info("🎙️  OpenAI: no key — local Whisper only")
+
+    # ── Check local Whisper ───────────────────────────────────────────────────
     try:
-        import whisper  # noqa: F401
-        logger.info("🎙️  Local Whisper: AVAILABLE")
-    except ImportError:
-        logger.warning("🎙️  Local Whisper: not installed — run: pip install openai-whisper")
+        import importlib.util
+        if importlib.util.find_spec("whisper") is not None:
+            logger.info("🎙️  Local Whisper: installed (lazy-loaded on first request)")
+        else:
+            logger.info("🎙️  Local Whisper: not installed — OpenAI API handles STT")
+    except Exception:
+        pass
 
+    # ── Check numpy/torch ─────────────────────────────────────────────────────
+    try:
+        import importlib.util
+        if importlib.util.find_spec("numpy") is not None:
+            logger.info("🔬 Voice analysis: numpy available")
+        else:
+            logger.info("🔬 Voice analysis: numpy not installed — voice analysis disabled")
+    except Exception:
+        pass
+
+    logger.info("📡 API: http://localhost:8000/api")
+    logger.info("📊 Status: http://localhost:8000/api/status")
     yield
     logger.info("GuardianAngel AI Backend shutting down...")
 
@@ -78,6 +116,11 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "https://guardianangel.ai",
+        # Vercel deployments
+        "https://guardian-angel-ai-murex.vercel.app",
+        "https://guardian-angel-ai.vercel.app",
+        "https://guardianangel-ai.vercel.app",
+        "https://guardian-angel-indnb6exe-daksh-chandia-s-projects.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -118,32 +161,59 @@ async def health_check():
 async def pipeline_status():
     """Returns the status of all AI pipeline components."""
     status = {
-        "whisper": False,
-        "ollama": False,
-        "whisper_model": None,
-        "ollama_model": None,
+        "whisper_local": False,
+        "whisper_api": False,
+        "gemini": False,
+        "openai_gpt": False,
+        "voice_analysis": False,
+        "stt_method": None,
+        "llm_method": None,
     }
 
-    # Check Whisper
+    # Local Whisper
     try:
         import whisper  # noqa: F401
-        status["whisper"] = True
-        status["whisper_model"] = "tiny"
+        status["whisper_local"] = True
     except ImportError:
         pass
 
-    # Check Ollama
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get("http://localhost:11434/api/tags")
+    # OpenAI
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {openai_key}"},
+                )
             if r.status_code == 200:
-                status["ollama"] = True
-                tags = r.json().get("models", [])
-                if tags:
-                    status["ollama_model"] = tags[0].get("name", "unknown")
+                status["whisper_api"] = True
+                status["openai_gpt"] = True
+        except Exception:
+            pass
+
+    # Gemini
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}",
+                )
+            status["gemini"] = r.status_code == 200
+        except Exception:
+            pass
+
+    # Voice analysis (numpy)
+    try:
+        import importlib.util
+        status["voice_analysis"] = importlib.util.find_spec("numpy") is not None
     except Exception:
         pass
+
+    # Determine active methods
+    status["stt_method"] = "openai_whisper_api" if status["whisper_api"] else ("local_whisper" if status["whisper_local"] else "unavailable")
+    status["llm_method"] = "gemini-2.5-flash" if status["gemini"] else ("gpt-3.5-turbo" if status["openai_gpt"] else "keyword_analysis")
 
     return {
         "status": "healthy",

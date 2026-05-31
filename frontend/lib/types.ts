@@ -1,6 +1,6 @@
 // Core types for GuardianAngel AI
 
-export type RiskLevel = "SAFE" | "SUSPICIOUS" | "HIGH RISK" | "SCAM";
+export type RiskLevel = "SAFE" | "SUSPICIOUS" | "SCAM";
 
 export interface TranscriptEntry {
   time: string;
@@ -95,19 +95,6 @@ export interface AudioAnalysisResponse {
   verdict: RiskLevel;
   manipulation_phrases: string[];
   evidence_summary: string;
-  // Voice authenticity fields
-  voice_risk: "LOW" | "MEDIUM" | "HIGH";
-  voice_flags: string[];
-  voice_summary: string;
-}
-
-export interface VoiceAnalysisResponse {
-  voice_clone_probability: number;
-  voice_risk: "LOW" | "MEDIUM" | "HIGH";
-  voice_flags: string[];
-  voice_summary: string;
-  features: Record<string, number | null>;
-  model: string;
 }
 
 export interface AlertResponse {

@@ -16,7 +16,7 @@ import {
   CheckCircle,
   Download,
   Play,
-  Video,
+  Image,
   AlertTriangle,
   X,
   Wifi,
@@ -49,10 +49,7 @@ export default function AnalysisPage() {
     accept:
       activeTab === "audio"
         ? { "audio/*": [".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm"] }
-        : {
-            "video/*": [".mp4", ".webm", ".mov", ".avi", ".mkv"],
-            "audio/*": [".mp3", ".wav", ".m4a", ".ogg", ".flac", ".webm"],
-          },
+        : { "image/*": [".jpg", ".jpeg", ".png", ".webp"] },
     maxFiles: 1,
     maxSize: 50 * 1024 * 1024,
   });
@@ -91,8 +88,6 @@ export default function AnalysisPage() {
 
   const runAnalysis = async () => {
     if (!uploadedFile) return;
-    // Both audio and video files go through the same audio analysis pipeline
-    // For video files, the backend extracts audio via ffmpeg automatically
     await runRealAnalysis(uploadedFile);
   };
 
@@ -179,7 +174,7 @@ export default function AnalysisPage() {
             <div className="flex gap-2 p-1 rounded-xl bg-surface border border-white/5">
               {[
                 { id: "audio", label: "Audio Analysis", icon: Mic },
-                { id: "video", label: "Video Analysis", icon: Video },
+                { id: "video", label: "Video Frame", icon: Image },
               ].map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -254,7 +249,7 @@ export default function AnalysisPage() {
                     <p className="text-text-muted text-sm mt-1">
                       {activeTab === "audio"
                         ? "MP3, WAV, M4A, OGG, FLAC, WEBM · Max 50MB"
-                        : "MP4, WEBM, MOV, AVI, MKV · Max 50MB"}
+                        : "JPG, PNG, WEBP · Max 50MB"}
                     </p>
                   </div>
                 </div>
@@ -324,8 +319,8 @@ export default function AnalysisPage() {
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {[
                     { label: "Upload", done: progress >= 100 },
-                    { label: "Whisper", done: analysisState === "complete" },
-                    { label: "Risk Score", done: analysisState === "complete" },
+                    { label: "Whisper", done: progress >= 100 },
+                    { label: "Risk Score", done: false },
                   ].map((step) => (
                     <div
                       key={step.label}

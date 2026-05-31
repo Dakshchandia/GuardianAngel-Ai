@@ -25,23 +25,9 @@ class AudioAnalysisResponse(BaseModel):
     risk_score: int = Field(ge=0, le=100)
     threats: list[ThreatEntry]
     voice_clone_probability: float = Field(ge=0.0, le=1.0)
-    verdict: str  # SAFE | SUSPICIOUS | HIGH RISK | SCAM
+    verdict: str  # SAFE | SUSPICIOUS | SCAM
     manipulation_phrases: list[str]
     evidence_summary: str
-    # Voice authenticity fields (new)
-    voice_risk: str = "LOW"               # LOW | MEDIUM | HIGH
-    voice_flags: list[str] = []           # explainable indicators
-    voice_summary: str = ""               # one-sentence description
-
-
-class VoiceAnalysisResponse(BaseModel):
-    """Standalone voice-only analysis response."""
-    voice_clone_probability: float = Field(ge=0.0, le=1.0)
-    voice_risk: str                        # LOW | MEDIUM | HIGH
-    voice_flags: list[str]
-    voice_summary: str
-    features: dict = {}
-    model: str
 
 
 class VideoFrameResponse(BaseModel):
